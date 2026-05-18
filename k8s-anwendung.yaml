@@ -163,13 +163,15 @@ spec:
         fsGroup: 1001
       containers:
       - name: phpmyadmin
-        # HIER REPARIERT: Nutzung des freien, sicheren Legacy-Bitnami-Images
         image: bitnamilegacy/phpmyadmin:latest
         securityContext:
           allowPrivilegeEscalation: false
         env:
         - name: DATABASE_HOST
           value: datenbank-anschluss
+        # NEU: Wir teilen phpMyAdmin mit, dass es in einem Unterordner aufgerufen wird
+        - name: PMA_ABSOLUTE_URI
+          value: /phpmyadmin/
         ports:
         - containerPort: 8080
           name: phpmyadmin
@@ -188,30 +190,38 @@ spec:
     app: phpmyadmin
   type: ClusterIP
 ---
-# Der digitale Pförtner (Ingress) - Regelt die Wegeleitung über eine einzige IP
+# Der digitale Pförtner (Ingress) - Regelt die Zuweisung über eine einzige IP
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: stahlbeton-pfoertner
   namespace: stahlbeton-sm0810
+  annotations:
+    # Sucht nach Mustern im Text
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # Schneidet das /phpmyadmin ab, bevor es zum Container geht
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Leitet Aufrufe ohne Schrägstrich am Ende sauber um
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      rewrite ^/phpmyadmin$ /phpmyadmin/ permanent;
 spec:
   ingressClassName: nginx
   rules:
   - http:
       paths:
-      # Regel 1: Der normale Aufruf (/) zeigt das WordPress an
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: webseite-anschluss
-            port:
-              number: 80
-      # Regel 2: Der Aufruf mit /phpmyadmin leitet zum Verwaltungs-Werkzeug weiter
-      - path: /phpmyadmin
-        pathType: Prefix
+      # Regel 1: Das Verwaltungs-Werkzeug (MUSS VORHER STEHEN wegen der Reihenfolge)
+      - path: /phpmyadmin(/|$)(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: phpmyadmin-anschluss
+            port:
+              number: 80
+      # Regel 2: Die Haupt-Webseite (WordPress)
+      - path: /()(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: webseite-anschluss
             port:
               number: 80
