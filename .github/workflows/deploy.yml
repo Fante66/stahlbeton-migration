@@ -1,14 +1,14 @@
 name: Automatischer Aufbau (Deploy)
 
-# Die Automatik startet, wenn wir Änderungen in den Hauptzweig (main) hochladen
 on:
   push:
     branches:
       - main
-    paths:
-      - 'k8s-anwendung.yaml'
+  # Dieser Befehl erzeugt einen "Run workflow" Knopf in GitHub
+  workflow_dispatch: 
 
 jobs:
+# ... ab hier bleibt der Rest der Datei exakt so, wie er war!
   deploy-anwendung:
     runs-on: ubuntu-latest
     steps:
