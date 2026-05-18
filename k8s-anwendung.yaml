@@ -23,11 +23,9 @@ spec:
   - Ingress
   ingress:
   - from:
-    # Erlaube Zugriff nur von der Haupt-Webseite (WordPress)
     - podSelector:
         matchLabels:
           app: wordpress
-    # Erlaube Zugriff auch vom neuen Verwaltungs-Werkzeug (phpMyAdmin)
     - podSelector:
         matchLabels:
           app: phpmyadmin
@@ -48,7 +46,6 @@ spec:
         app: mariadb
     spec:
       securityContext:
-        # Sicherheit: Nicht als mächtiger Chef-Nutzer (Root) ausführen
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
@@ -169,7 +166,6 @@ spec:
         env:
         - name: DATABASE_HOST
           value: datenbank-anschluss
-        # NEU: Wir teilen phpMyAdmin mit, dass es in einem Unterordner aufgerufen wird
         - name: PMA_ABSOLUTE_URI
           value: /phpmyadmin/
         ports:
@@ -190,26 +186,21 @@ spec:
     app: phpmyadmin
   type: ClusterIP
 ---
-# Der digitale Pförtner (Ingress) - Regelt die Zuweisung über eine einzige IP
+# Der digitale Pförtner (Ingress)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: stahlbeton-pfoertner
   namespace: stahlbeton-sm0810
   annotations:
-    # Sucht nach Mustern im Text
     nginx.ingress.kubernetes.io/use-regex: "true"
-    # Schneidet das /phpmyadmin ab, bevor es zum Container geht
     nginx.ingress.kubernetes.io/rewrite-target: /$2
-    # Leitet Aufrufe ohne Schrägstrich am Ende sauber um
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      rewrite ^/phpmyadmin$ /phpmyadmin/ permanent;
+    # Das blockierte Snippet wurde hier restlos entfernt
 spec:
   ingressClassName: nginx
   rules:
   - http:
       paths:
-      # Regel 1: Das Verwaltungs-Werkzeug (MUSS VORHER STEHEN wegen der Reihenfolge)
       - path: /phpmyadmin(/|$)(.*)
         pathType: ImplementationSpecific
         backend:
@@ -217,7 +208,6 @@ spec:
             name: phpmyadmin-anschluss
             port:
               number: 80
-      # Regel 2: Die Haupt-Webseite (WordPress)
       - path: /()(.*)
         pathType: ImplementationSpecific
         backend:
