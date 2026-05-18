@@ -158,7 +158,7 @@ spec:
         app: phpmyadmin
     spec:
       securityContext:
-        # HIER REPARIERT: Absolute Einhaltung von Security-Vorgabe 3!
+        # Absolute Einhaltung von Security-Vorgabe 3!
         runAsNonRoot: true
         runAsUser: 1001
         fsGroup: 1001
@@ -169,7 +169,7 @@ spec:
         securityContext:
           allowPrivilegeEscalation: false
         env:
-        # Zurück auf den alten Bitnami-Standard
+        # Zurück auf den funktionierenden Bitnami-Einstellungs-Standard
         - name: DATABASE_HOST
           value: datenbank-anschluss
         ports:
