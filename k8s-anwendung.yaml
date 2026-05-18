@@ -158,18 +158,16 @@ spec:
         app: phpmyadmin
     spec:
       securityContext:
-        # Absolute Einhaltung von Security-Vorgabe 3!
         runAsNonRoot: true
         runAsUser: 1001
         fsGroup: 1001
       containers:
       - name: phpmyadmin
-        # Nutzung des freien, sicheren Legacy-Bitnami-Images
+        # HIER REPARIERT: Nutzung des freien, sicheren Legacy-Bitnami-Images
         image: bitnamilegacy/phpmyadmin:latest
         securityContext:
           allowPrivilegeEscalation: false
         env:
-        # Zurück auf den funktionierenden Bitnami-Einstellungs-Standard
         - name: DATABASE_HOST
           value: datenbank-anschluss
         ports:

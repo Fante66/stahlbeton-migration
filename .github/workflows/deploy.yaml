@@ -4,27 +4,26 @@ on:
   push:
     branches:
       - main
-  # Manueller Startknopf
-  workflow_dispatch: 
 
 jobs:
   deploy-anwendung:
     runs-on: ubuntu-latest
     steps:
       - name: Code herunterladen
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # Direkter Zugang über unseren KUBE_CONFIG Schlüssel (Plan C)
-      # Kein Azure-Login mehr notwendig!
       - name: Kubernetes Kontext setzen
         uses: azure/k8s-set-context@v3
         with:
+          method: kubeconfig
+          # Hier holt sich der Roboter deinen geheimen Schlüssel aus dem GitHub-Tresor
           kubeconfig: ${{ secrets.KUBE_CONFIG }}
 
-      # Unseren Bauplan (YAML) auf dem Computer ausführen
       - name: Bauplan anwenden
         uses: Azure/k8s-deploy@v4
         with:
-          namespace: 'stahlbeton-sm0810'
+          # Der Bereich in deinem Cluster
+          namespace: stahlbeton-sm0810
+          # Die Datei, die angewendet werden soll
           manifests: |
             k8s-anwendung.yaml
