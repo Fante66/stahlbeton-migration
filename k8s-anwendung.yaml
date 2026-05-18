@@ -1,172 +1,217 @@
----
-# 1. Eigener Arbeitsbereich (Namespace) erstellen
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: stahlbeton-sm0810
----
-# 2. Geheimnis-Tresor (Secret) für die Passwörter
+# Speicherort für Passwörter und geheime Schlüssel
 apiVersion: v1
 kind: Secret
 metadata:
-  name: db-geheimnis
+  name: datenbank-geheimnis
   namespace: stahlbeton-sm0810
 type: Opaque
 stringData:
-  mariadb-root-password: "SehrGeheimesRootPasswort123!"
-  mariadb-password: "StahlbetonWebPasswort123!"
+  db_root_password: "StahlbetonSicher2026!"
+  db_password: "WordPressSicher2026!"
 ---
-# 3. Feste Festplatte (PersistentVolumeClaim) für die Datenbank
-# Verhindert Datenverlust, falls unsere günstige Spot-Instanz neu gestartet wird!
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mariadb-festplatte
-  namespace: stahlbeton-sm0810
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 8Gi
----
-# 4. Sicherheits-Regel (Network Policy) für die Datenbank
-# Blockt alles ab, was nicht das Etikett "app: webseite" trägt.
+# Digitale Schutzwand für die Datenbank (Sicherheits-Regelwerk)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: db-schutzschild
+  name: datenbank-schutzwand
   namespace: stahlbeton-sm0810
 spec:
   podSelector:
     matchLabels:
-      app: datenbank
+      app: mariadb
   policyTypes:
   - Ingress
   ingress:
   - from:
+    # Erlaube Zugriff nur von der Haupt-Webseite (WordPress)
     - podSelector:
         matchLabels:
-          app: webseite
+          app: wordpress
+    # Erlaube Zugriff auch vom neuen Verwaltungs-Werkzeug (phpMyAdmin)
+    - podSelector:
+        matchLabels:
+          app: phpmyadmin
 ---
-# 5. Interner Anschluss (Service) für die Datenbank
-apiVersion: v1
-kind: Service
-metadata:
-  name: mariadb
-  namespace: stahlbeton-sm0810
-spec:
-  ports:
-    - port: 3306
-      targetPort: 3306
-  selector:
-    app: datenbank
-  clusterIP: None
----
-# 6. Bauplan (Deployment) für die Datenbank
+# Der Datenbank-Server (MariaDB)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mariadb
+  name: mariadb-computer
   namespace: stahlbeton-sm0810
 spec:
   selector:
     matchLabels:
-      app: datenbank
+      app: mariadb
   template:
     metadata:
       labels:
-        app: datenbank
+        app: mariadb
+  spec:
+    securityContext:
+      # Sicherheit: Nicht als mächtiger Chef-Nutzer (Root) ausführen
+      runAsNonRoot: true
+      runAsUser: 999
+      fsGroup: 999
+    containers:
+    - name: mariadb
+      image: mariadb:10.6
+      securityContext:
+        allowPrivilegeEscalation: false
+      env:
+      - name: MARIADB_ROOT_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: datenbank-geheimnis
+            key: db_root_password
+      - name: MARIADB_DATABASE
+        value: wordpress_db
+      - name: MARIADB_USER
+        value: wp_nutzer
+      - name: MARIADB_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: datenbank-geheimnis
+            key: db_password
+      ports:
+      - containerPort: 3306
+        name: mariadb
+---
+# Interner Anschluss für die Datenbank
+apiVersion: v1
+kind: Service
+metadata:
+  name: datenbank-anschluss
+  namespace: stahlbeton-sm0810
+spec:
+  ports:
+  - port: 3306
+  selector:
+    app: mariadb
+---
+# Die Haupt-Webseite (WordPress)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-computer
+  namespace: stahlbeton-sm0810
+spec:
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
     spec:
-      # Sicherheits-Vorgabe 3: Pods dürfen nicht als oberster Chef (root) laufen
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
         fsGroup: 1001
       containers:
-      - name: mariadb
-        image: bitnami/mariadb:latest
-        ports:
-        - containerPort: 3306
+      - name: wordpress
+        # Wir nutzen die Bitnami-Version, da diese nativ ohne Chef-Rechte läuft
+        image: bitnami/wordpress:latest
         securityContext:
-          runAsUser: 1001
+          allowPrivilegeEscalation: false
         env:
-        - name: MARIADB_ROOT_PASSWORD
+        - name: WORDPRESS_DATABASE_HOST
+          value: datenbank-anschluss
+        - name: WORDPRESS_DATABASE_NAME
+          value: wordpress_db
+        - name: WORDPRESS_DATABASE_USER
+          value: wp_nutzer
+        - name: WORDPRESS_DATABASE_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: db-geheimnis
-              key: mariadb-root-password
-        - name: MARIADB_DATABASE
-          value: wordpressdb
-        - name: MARIADB_USER
-          value: wordpressuser
-        - name: MARIADB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-geheimnis
-              key: mariadb-password
-        # Festplatte an den Datenbank-Container anschließen
-        volumeMounts:
-        - name: db-daten
-          mountPath: /bitnami/mariadb
-      volumes:
-      - name: db-daten
-        persistentVolumeClaim:
-          claimName: mariadb-festplatte
+              name: datenbank-geheimnis
+              key: db_password
+        ports:
+        - containerPort: 8080
+          name: wordpress
 ---
-# 7. Anschluss nach draußen (LoadBalancer Service) für die Webseite
+# Interner Anschluss für WordPress (Kostensparer: Typ geändert auf ClusterIP!)
 apiVersion: v1
 kind: Service
 metadata:
   name: webseite-anschluss
   namespace: stahlbeton-sm0810
 spec:
-  type: LoadBalancer
   ports:
-    # Von außen über Standard-Port 80 erreichbar...
-    - port: 80
-      # ...aber intern an Port 8080 weiterleiten (wg. Non-Root Sicherheit!)
-      targetPort: 8080
+  - port: 80
+    targetPort: 8080
   selector:
-    app: webseite
+    app: wordpress
+  type: ClusterIP
 ---
-# 8. Bauplan (Deployment) für die WordPress Webseite
+# Das Datenbank-Verwaltungs-Werkzeug (phpMyAdmin)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: wordpress
+  name: phpmyadmin-computer
   namespace: stahlbeton-sm0810
 spec:
   selector:
     matchLabels:
-      app: webseite
+      app: phpmyadmin
   template:
     metadata:
       labels:
-        app: webseite
+        app: phpmyadmin
     spec:
-      # Sicherheits-Vorgabe 3: Pods dürfen nicht als oberster Chef (root) laufen
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
         fsGroup: 1001
-      containers:
-      - name: wordpress
-        image: bitnami/wordpress:latest
-        ports:
-        # Hier lauscht der Container auf Port 8080, da ihm für Port 80 die Root-Rechte fehlen
-        - containerPort: 8080
-        securityContext:
-          runAsUser: 1001
-        env:
-        - name: WORDPRESS_DATABASE_HOST
-          value: mariadb
-        - name: WORDPRESS_DATABASE_PORT_NUMBER
-          value: "3306"
-        - name: WORDPRESS_DATABASE_NAME
-          value: wordpressdb
-        - name: WORDPRESS_DATABASE_USER
-          value: wordpressuser
-        - name: WORDPRESS_DATABASE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-geheimnis
-              key: mariadb-password
+    containers:
+    - name: phpmyadmin
+      image: bitnami/phpmyadmin:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+      env:
+      - name: DATABASE_HOST
+        value: datenbank-anschluss
+      ports:
+      - containerPort: 8080
+        name: phpmyadmin
+---
+# Interner Anschluss für das Verwaltungs-Werkzeug
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpmyadmin-anschluss
+  namespace: stahlbeton-sm0810
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: phpmyadmin
+  type: ClusterIP
+---
+# Der digitale Pförtner (Ingress) - Regelt die Wegeleitung über eine einzige IP
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stahlbeton-pfoertner
+  namespace: stahlbeton-sm0810
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      # Regel 1: Der normale Aufruf (/) zeigt das WordPress an
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: webseite-anschluss
+            port:
+              number: 80
+      # Regel 2: Der Aufruf mit /phpmyadmin leitet zum Verwaltungs-Werkzeug weiter
+      - path: /phpmyadmin
+        pathType: Prefix
+        backend:
+          service:
+            name: phpmyadmin-anschluss
+            port:
+              number: 80
