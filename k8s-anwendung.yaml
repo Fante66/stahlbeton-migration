@@ -187,7 +187,7 @@ spec:
     app: phpmyadmin
   type: ClusterIP
 ---
-# Der digitale Pförtner (Ingress) - Regelt die Wegeleitung über eine einzige IP
+# Der digitale Pförtner (Ingress) - Regelt die Wegeleitung über eine einzige IP [cite: 51, 52]
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -198,7 +198,7 @@ spec:
   rules:
   - http:
       paths:
-      # Regel 1: Der normale Aufruf (/) zeigt das WordPress an
+      # Regel 1: Der normale Aufruf (/) zeigt das WordPress an [cite: 52]
       - path: /
         pathType: Prefix
         backend:
@@ -206,7 +206,7 @@ spec:
             name: webseite-anschluss
             port:
               number: 80
-      # Regel 2: Der Aufruf mit /phpmyadmin leitet zum Verwaltungs-Werkzeug weiter
+      # Regel 2: Der Aufruf mit /phpmyadmin leitet zum Verwaltungs-Werkzeug weiter [cite: 53]
       - path: /phpmyadmin
         pathType: Prefix
         backend:
