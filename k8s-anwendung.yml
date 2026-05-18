@@ -1,0 +1,172 @@
+---
+# 1. Eigener Arbeitsbereich (Namespace) erstellen
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stahlbeton-sm0810
+---
+# 2. Geheimnis-Tresor (Secret) für die Passwörter
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-geheimnis
+  namespace: stahlbeton-sm0810
+type: Opaque
+stringData:
+  mariadb-root-password: "SehrGeheimesRootPasswort123!"
+  mariadb-password: "StahlbetonWebPasswort123!"
+---
+# 3. Feste Festplatte (PersistentVolumeClaim) für die Datenbank
+# Verhindert Datenverlust, falls unsere günstige Spot-Instanz neu gestartet wird!
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-festplatte
+  namespace: stahlbeton-sm0810
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+---
+# 4. Sicherheits-Regel (Network Policy) für die Datenbank
+# Blockt alles ab, was nicht das Etikett "app: webseite" trägt.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-schutzschild
+  namespace: stahlbeton-sm0810
+spec:
+  podSelector:
+    matchLabels:
+      app: datenbank
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: webseite
+---
+# 5. Interner Anschluss (Service) für die Datenbank
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: stahlbeton-sm0810
+spec:
+  ports:
+    - port: 3306
+      targetPort: 3306
+  selector:
+    app: datenbank
+  clusterIP: None
+---
+# 6. Bauplan (Deployment) für die Datenbank
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: stahlbeton-sm0810
+spec:
+  selector:
+    matchLabels:
+      app: datenbank
+  template:
+    metadata:
+      labels:
+        app: datenbank
+    spec:
+      # Sicherheits-Vorgabe 3: Pods dürfen nicht als oberster Chef (root) laufen
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1001
+      containers:
+      - name: mariadb
+        image: bitnami/mariadb:latest
+        ports:
+        - containerPort: 3306
+        securityContext:
+          runAsUser: 1001
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-geheimnis
+              key: mariadb-root-password
+        - name: MARIADB_DATABASE
+          value: wordpressdb
+        - name: MARIADB_USER
+          value: wordpressuser
+        - name: MARIADB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-geheimnis
+              key: mariadb-password
+        # Festplatte an den Datenbank-Container anschließen
+        volumeMounts:
+        - name: db-daten
+          mountPath: /bitnami/mariadb
+      volumes:
+      - name: db-daten
+        persistentVolumeClaim:
+          claimName: mariadb-festplatte
+---
+# 7. Anschluss nach draußen (LoadBalancer Service) für die Webseite
+apiVersion: v1
+kind: Service
+metadata:
+  name: webseite-anschluss
+  namespace: stahlbeton-sm0810
+spec:
+  type: LoadBalancer
+  ports:
+    # Von außen über Standard-Port 80 erreichbar...
+    - port: 80
+      # ...aber intern an Port 8080 weiterleiten (wg. Non-Root Sicherheit!)
+      targetPort: 8080
+  selector:
+    app: webseite
+---
+# 8. Bauplan (Deployment) für die WordPress Webseite
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: stahlbeton-sm0810
+spec:
+  selector:
+    matchLabels:
+      app: webseite
+  template:
+    metadata:
+      labels:
+        app: webseite
+    spec:
+      # Sicherheits-Vorgabe 3: Pods dürfen nicht als oberster Chef (root) laufen
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1001
+      containers:
+      - name: wordpress
+        image: bitnami/wordpress:latest
+        ports:
+        # Hier lauscht der Container auf Port 8080, da ihm für Port 80 die Root-Rechte fehlen
+        - containerPort: 8080
+        securityContext:
+          runAsUser: 1001
+        env:
+        - name: WORDPRESS_DATABASE_HOST
+          value: mariadb
+        - name: WORDPRESS_DATABASE_PORT_NUMBER
+          value: "3306"
+        - name: WORDPRESS_DATABASE_NAME
+          value: wordpressdb
+        - name: WORDPRESS_DATABASE_USER
+          value: wordpressuser
+        - name: WORDPRESS_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-geheimnis
+              key: mariadb-password

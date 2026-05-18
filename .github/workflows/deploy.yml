@@ -1,0 +1,39 @@
+name: Automatischer Aufbau (Deploy)
+
+# Die Automatik startet, wenn wir Änderungen in den Hauptzweig (main) hochladen
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'k8s-anwendung.yaml'
+
+jobs:
+  deploy-anwendung:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Den aktuellen Code aus unserem GitHub-Speicher holen
+      - name: Code herunterladen
+        uses: actions/checkout@v3
+
+      # 2. Bei der Azure Cloud anmelden
+      # Dafür muss in den GitHub-Einstellungen ein Geheimnis namens AZURE_CREDENTIALS hinterlegt sein
+      - name: Azure Anmeldung
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # 3. Verbindung zu unserem Haupt-Computer (AKS) herstellen
+      - name: Verbindung zu AKS herstellen
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: 'rg_Steffen_Mueller'
+          cluster-name: 'aks-stahlbeton-sm0810'
+
+          # 4. Unseren Bauplan (YAML) auf dem Computer ausführen
+      - name: Bauplan anwenden
+        uses: Azure/k8s-deploy@v4
+        with:
+          namespace: 'stahlbeton-sm0810'
+          manifests: |
+            k8s-anwendung.yaml
